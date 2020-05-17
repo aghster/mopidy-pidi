@@ -93,22 +93,27 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
 
     def stream_title_changed(self, title):
         self.display.update(title=title)
+        self.display.reset_dimming()
 
     def track_playback_ended(self, tl_track, time_position):
         self.update_elapsed(time_position)
         self.display.update(state="pause")
+        self.display.reset_dimming()
 
     def track_playback_paused(self, tl_track, time_position):
         self.update_elapsed(time_position)
         self.display.update(state="pause")
+        self.display.reset_dimming()
 
     def track_playback_resumed(self, tl_track, time_position):
         self.update_elapsed(time_position)
         self.display.update(state="play")
+        self.display.reset_dimming()
 
     def track_playback_started(self, tl_track):
         self.update_track(tl_track.track, 0)
         self.display.update(state="play")
+        self.display.reset_dimming()
 
     def update_elapsed(self, time_position):
         self.display.update(elapsed=float(time_position))
@@ -164,6 +169,7 @@ class PiDiFrontend(pykka.ThreadingActor, core.CoreListener):
             return
 
         self.display.update(volume=volume)
+        self.display.reset_dimming()
 
 
 class PiDi:
@@ -194,6 +200,9 @@ class PiDi:
         self._last_progress_update = time.time()
         self._last_progress_value = 0
         self._last_art = ""
+        self._dim_delay = self.config["pidi"]["dim_delay"]
+        self._display_dimmed = False
+        self._last_action_time = time.time()
 
     def start(self):
         if self._thread is not None:
@@ -209,6 +218,11 @@ class PiDi:
         self._thread.join()
         self._thread = None
         self._display.stop()
+
+    def reset_dimming(self):
+        self._display.set_backlight(1)
+        self._display_dimmed = False
+        self._last_action_time = time.time()
 
     def _handle_album_art(self, art):
         if art != self._last_art:
@@ -277,6 +291,12 @@ class PiDi:
                 self.album,
                 self.artist,
             )
+
+            if self._dim_delay and not self._display_dimmed:
+                dim_elapsed_ms = (time.time() - self._last_action_time) * 1000
+                if dim_elapsed_ms > self._dim_delay * 1000:
+                    self._display.set_backlight(0)
+                    self._display_dimmed = True
 
             self._display.redraw()
             time.sleep(self._delay)
